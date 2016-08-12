@@ -4,6 +4,7 @@ package metre
 import (
 	"errors"
 	"strings"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/robfig/cron"
@@ -15,13 +16,13 @@ const TRACKQUEUEPORT string = "5556" // Default port for queue
 const CACHEPORT string = "6379"      // Default port for cache
 
 type Metre struct {
-	Cron       cron.Cron
-	Queue      Queue
-	TrackQueue Queue
-	Cache      Cache
-	Scheduler  Scheduler
-	TaskMap    map[string]*Task
-	// Add func(t Task)
+	Cron           cron.Cron
+	Queue          Queue
+	TrackQueue     Queue
+	Cache          Cache
+	Scheduler      Scheduler
+	TaskMap        map[string]*Task
+	MessageChannel chan string
 }
 
 // New creates a new scheduler to manage task scheduling and states
@@ -65,17 +66,19 @@ func New(queueUri string, trackQueueUri string, cacheUri string) (Metre, error) 
 	}
 	m := make(map[string]*Task)
 	s := NewScheduler(q, c, m)
-	return Metre{cron, q, t, c, s, m}, nil
+	msgChan := make(chan string)
+	return Metre{cron, q, t, c, s, m, msgChan}, nil
 }
 
 // Add adds a cron job task to schedule and process
-func (m *Metre) Add(t Task) {
+func (m *Metre) Add(t *Task) {
 	id := t.GetID()
 	if _, exists := m.TaskMap[id]; exists {
 		panic("attempted to add two tasks with the same ID [" + t.ID + "]")
 	}
 
-	m.TaskMap[id] = &t
+	m.TaskMap[id] = t
+	t.MessageChannel = m.MessageChannel
 	m.Cron.AddFunc(t.Interval, func() {
 		m.scheduleFromId(id)
 	})
@@ -88,6 +91,11 @@ func (m *Metre) scheduleFromId(ID string) (string, error) {
 	}
 
 	tr := NewTaskRecord(t.GetID())
+
+	// Making sure the next run is not affected by previous runs.
+	t.MessageCount = 0
+	t.ScheduleCount = 0
+	t.StartTime = time.Now()
 	t.Schedule(tr, m.Scheduler, m.Cache, m.Queue)
 	t.ScheduleDone = true
 	return buildTaskKey(tr), nil
@@ -128,7 +136,6 @@ func (m *Metre) Track() {
 	if e != nil {
 		panic(e)
 	}
-	log.Info("Waiting for messages from track queue")
 	for {
 		msg := m.TrackQueue.Pop()
 		trackMsg, err := parseMessage(msg)

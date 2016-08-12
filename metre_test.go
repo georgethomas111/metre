@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var test = Task{
+var test = &Task{
 	TimeOut:  time.Second * 5,
 	ID:       "Test",
 	Interval: "0 * * * * *",
@@ -32,6 +32,15 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
+func printMsgs(msgChan chan string) {
+	go func() {
+		for {
+			msg := <-msgChan
+			log.Info(msg)
+		}
+	}()
+}
+
 func TestLife(t *testing.T) {
 	var wg sync.WaitGroup
 	met, err := New("", "", "")
@@ -39,13 +48,14 @@ func TestLife(t *testing.T) {
 		t.Errorf("Metre creation error" + err.Error())
 	}
 
+	printMsgs(met.MessageChannel)
+
 	go met.Track()
 	go met.StartSlave()
+
 	met.Add(test)
-	test.TestTimeOut()
-	met.TaskMap[test.ID] = &test
+	go test.TestTimeOut()
 	met.Schedule(test.ID)
-	log.Info("Waiting ...")
 	wg.Add(1)
 	wg.Wait()
 }

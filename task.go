@@ -7,14 +7,16 @@ import (
 )
 
 type Task struct {
-	TimeOut       time.Duration
-	MessageCount  int
-	ScheduleCount int
-	ScheduleDone  bool
-	ID            string // Type Type of task (user as class prefix in cache)
-	Interval      string // Schedule String in cron notation
-	Schedule      func(t TaskRecord, s Scheduler, c Cache, q Queue)
-	Process       func(t TaskRecord, s Scheduler, c Cache, q Queue)
+	MessageChannel chan string
+	StartTime      time.Time
+	TimeOut        time.Duration
+	MessageCount   int
+	ScheduleCount  int
+	ScheduleDone   bool
+	ID             string // Type Type of task (user as class prefix in cache)
+	Interval       string // Schedule String in cron notation
+	Schedule       func(t TaskRecord, s Scheduler, c Cache, q Queue)
+	Process        func(t TaskRecord, s Scheduler, c Cache, q Queue)
 }
 
 func (t Task) GetID() string {
@@ -32,15 +34,17 @@ func (t *Task) checkComplete() bool {
 	return false
 }
 
+func (t *Task) sendMessage(msg string) {
+	t.MessageChannel <- msg
+}
+
 func (t *Task) TestTimeOut() {
-	go func() {
-		if t.TimeOut != 0 {
-			time.Sleep(t.TimeOut)
-			if !t.checkComplete() {
-				log.Info("Task hit timeout at time ", time.Now())
-			}
+	if t.TimeOut != 0 {
+		time.Sleep(t.TimeOut)
+		if !t.checkComplete() {
+			t.sendMessage("Task hit timeout in " + t.TimeOut.String())
 		}
-	}()
+	}
 }
 
 func (t *Task) Track(trackMsg *trackMessage) {
@@ -48,13 +52,13 @@ func (t *Task) Track(trackMsg *trackMessage) {
 	case Status:
 		t.MessageCount++
 		if t.checkComplete() {
-			log.Info(trackMsg.TaskId + ": Complete")
-			log.Info(trackMsg.TaskId, ": Completed at ", time.Now())
+			t.sendMessage(trackMsg.TaskId + ":Complete")
+			t.sendMessage(trackMsg.TaskId + ": Time taken " + time.Since(t.StartTime).String())
 		}
 	case Debug:
-		log.Debug(trackMsg.TaskId + ":" + trackMsg.Message)
+		t.sendMessage("DEBUG:" + trackMsg.TaskId + ":" + trackMsg.Message)
 	case Error:
-		log.Warn(trackMsg.TaskId + ":" + trackMsg.Message)
+		t.sendMessage("ERROR:" + trackMsg.TaskId + ":" + trackMsg.Message)
 	default:
 		log.Warn("Unknown message type")
 	}
