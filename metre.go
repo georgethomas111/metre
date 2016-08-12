@@ -20,7 +20,7 @@ type Metre struct {
 	TrackQueue Queue
 	Cache      Cache
 	Scheduler  Scheduler
-	TaskMap    map[string]Task
+	TaskMap    map[string]*Task
 	// Add func(t Task)
 }
 
@@ -63,8 +63,8 @@ func New(queueUri string, trackQueueUri string, cacheUri string) (Metre, error) 
 	if err != nil {
 		return Metre{}, err
 	}
-	s := NewScheduler(q, c)
-	m := make(map[string]Task)
+	m := make(map[string]*Task)
+	s := NewScheduler(q, c, m)
 	return Metre{cron, q, t, c, s, m}, nil
 }
 
@@ -75,10 +75,22 @@ func (m *Metre) Add(t Task) {
 		panic("attempted to add two tasks with the same ID [" + t.ID + "]")
 	}
 
-	m.TaskMap[id] = t
+	m.TaskMap[id] = &t
 	m.Cron.AddFunc(t.Interval, func() {
-		t.Schedule(NewTaskRecord(id), m.Scheduler, m.Cache, m.Queue)
+		m.scheduleFromId(id)
 	})
+}
+
+func (m *Metre) scheduleFromId(ID string) (string, error) {
+	t, ok := m.TaskMap[ID]
+	if ok == false {
+		return "", errors.New("task [" + ID + "] not recognized")
+	}
+
+	tr := NewTaskRecord(t.GetID())
+	t.Schedule(tr, m.Scheduler, m.Cache, m.Queue)
+	t.ScheduleDone = true
+	return buildTaskKey(tr), nil
 }
 
 // Schedule schedules a singular cron task
@@ -87,14 +99,7 @@ func (m *Metre) Schedule(ID string) (string, error) {
 	if e != nil {
 		return "", nil
 	}
-	t, ok := m.TaskMap[ID]
-	if ok == false {
-		return "", errors.New("task [" + ID + "] not recognized")
-	}
-
-	tr := NewTaskRecord(t.GetID())
-	t.Schedule(tr, m.Scheduler, m.Cache, m.Queue)
-	return buildTaskKey(tr), nil
+	return m.scheduleFromId(ID)
 }
 
 // Scheduler processes a singular cron task
@@ -126,21 +131,25 @@ func (m *Metre) Track() {
 	log.Info("Waiting for messages from track queue")
 	for {
 		msg := m.TrackQueue.Pop()
-		// Handle different types of messages
-		// FIXME log the message in temporarily
-		log.Info(msg)
+		trackMsg, err := parseMessage(msg)
+		if err != nil {
+			log.Warn("Error parsing track message" + err.Error())
+		}
+		task := m.TaskMap[trackMsg.TaskId]
+		task.Track(trackMsg)
 	}
 }
 
 func (m *Metre) runAndSendComplete(tr TaskRecord) {
 	tsk := m.TaskMap[tr.ID]
 	tsk.Process(tr, m.Scheduler, m.Cache, m.Queue)
-	log.Info("Sending Completed")
-	_, err := m.TrackQueue.Push("Status:Completed")
+	// The content do not matter as this is used for counting messages.
+	// TODO Could add the success or failure of the task in future.
+	statusMsg := createMsg(Status, tr.ID, tr.UID, "")
+	_, err := m.TrackQueue.Push(statusMsg)
 	if err != nil {
 		log.Warn("Error while pushing completed status for a process")
 	}
-
 }
 
 func (m *Metre) StartSlave() {
