@@ -28,10 +28,7 @@ func (t Task) GetInterval() string {
 }
 
 func (t *Task) checkComplete() bool {
-	if t.MessageCount == t.ScheduleCount && t.ScheduleDone {
-		return true
-	}
-	return false
+	return t.MessageCount == t.ScheduleCount && t.ScheduleDone
 }
 
 func (t *Task) sendMessage(msg string) {
