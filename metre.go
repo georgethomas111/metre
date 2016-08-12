@@ -56,7 +56,7 @@ func New(queueUri string, trackQueueUri string, cacheUri string) (Metre, error) 
 	}
 
 	t, tErr := NewQueue(trackQueueUri)
-	if qErr != nil {
+	if tErr != nil {
 		return Metre{}, tErr
 	}
 
@@ -85,12 +85,13 @@ func (m *Metre) Add(t *Task) {
 }
 
 func (m *Metre) scheduleFromId(ID string) (string, error) {
-	t, ok := m.TaskMap[ID]
-	if ok == false {
+	var t *Task
+	var ok bool
+	if t, ok = m.TaskMap[ID]; !ok {
 		return "", errors.New("task [" + ID + "] not recognized")
 	}
 
-	tr := NewTaskRecord(t.GetID())
+	tr := NewTaskRecord(ID)
 
 	// Making sure the next run is not affected by previous runs.
 	t.MessageCount = 0
@@ -117,7 +118,7 @@ func (m *Metre) Process(ID string) (string, error) {
 		return "", errors.New("task [" + ID + "] not recognized")
 	}
 
-	tr := NewTaskRecord(t.GetID())
+	tr := NewTaskRecord(ID)
 	t.Process(tr, m.Scheduler, m.Cache, m.Queue)
 	return buildTaskKey(tr), nil
 }

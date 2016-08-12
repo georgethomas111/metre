@@ -25,7 +25,7 @@ func parseMessage(msg string) (*trackMessage, error) {
 	return trackMsg, err
 }
 
-func createMsg(mt msgType, id string, uid string, msg string) string {
+func createMsg(mt msgType, id, uid, msg string) string {
 	msgObj := &trackMessage{
 		MessageType: mt,
 		TaskId:      id,

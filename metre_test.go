@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	"fmt"
-	log "github.com/Sirupsen/logrus"
+	"os"
 	"sync"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 var test = &Task{
@@ -29,7 +31,7 @@ var test = &Task{
 }
 
 func TestMain(m *testing.M) {
-	m.Run()
+	os.Exit(m.Run())
 }
 
 func printMsgs(msgChan chan string) {
